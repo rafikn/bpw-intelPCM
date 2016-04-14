@@ -6,10 +6,17 @@
 
 #define C 200
 
+
+#define WIDTH 1e3
+#define LEVEL 1e5
+
 using namespace std;
+using std::vector;
 
 
-uint8_t * init_arr(uint8_t * arr, uint8_t width) {
+vector<uint8_t> init_arr(uint64_t width) {
+  vector<uint8_t> arr;
+  arr.resize(width);
   for (int i = 0; i< width; i++) {
     arr[i] = (uint8_t)rand()&1;
   }
@@ -20,16 +27,16 @@ uint8_t * init_arr(uint8_t * arr, uint8_t width) {
 uint8_t gate_inputs(uint8_t gate) {
   switch (gate) {
     case 0x00: // not
-      return 0x01;
-      break;
+    return 0x01;
+    break;
     case 0x01: //and2
     case 0x02: //or2
     case 0x03: // xor2
     case 0x04: //nand2
     case 0x05: //nor2
     case 0x06: //xnor2
-      return 0x02;
-      break;
+    return 0x02;
+    break;
     case 0x07: //and3
     case 0x08: //or3
     case 0x09: //nand3
@@ -37,12 +44,12 @@ uint8_t gate_inputs(uint8_t gate) {
     case 0x0b: //xor3
     case 0x0c: //xnor3
     case 0x0d: //mux3
-      return 3;
-      break;
+    return 3;
+    break;
     case 0x0e: // COPY
     case 0x0f:
-      return 0;
-      break;
+    return 0;
+    break;
   }
 }
 
@@ -50,15 +57,16 @@ uint8_t gate_inputs(uint8_t gate) {
 uint8_t generate_gate() {
   while (1) {
     uint8_t gate = (rand()&1 << 0 |
-      rand()&1 << 1 |
-      rand()&1 << 2 |
-      rand()&1 << 3
-    ) & (0xff >> 4);
-    if (gate_inputs(gate)) return gate;
-  }
+    rand()&1 << 1 |
+    rand()&1 << 2 |
+    rand()&1 << 3
+  ) & (0xff >> 4);
+  if (gate_inputs(gate)) return gate;
+}
 }
 
 uint64_t generate_stride(uint64_t limit) {
+  srand(std::time(0));
 
   uint64_t currInput = 0;
   uint64_t stride = 0;
@@ -74,130 +82,181 @@ uint64_t generate_stride(uint64_t limit) {
 
 
 
+class Gate {
+private:
+  uint8_t type;
+  uint64_t input_1, input_2, input_3;
+public:
+  Gate();
+  Gate(uint8_t, uint64_t, uint64_t, uint64_t);
+  uint8_t evaluate(vector<uint8_t> inputs);
+};
 
-void simulate() {
+Gate::Gate(uint8_t t, uint64_t i1, uint64_t i2, uint64_t i3) {
+  type = t;
+  input_1 = i1; // reference in input array
+  input_2 = i2;
+  input_3 = i3;
+}
 
-  uint64_t input_1;
-  uint64_t input_2;
-  uint64_t input_3;
+Gate::Gate() {
+  type = 0;
+  input_1 = -1;
+  input_2 = -1;
+  input_3 = -1;
+}
 
-  uint64_t width = 1e4;
-  uint64_t levels = 1e4;
-  uint8_t gateType;
+uint8_t Gate::evaluate(vector<uint8_t> inputs) {
+  switch (type) {
+    case 0x00: // not
+    return !inputs[input_1];
+    case 0x01: //and2
+    return inputs[input_1] & inputs[input_2];
+    case 0x02: //or2
+    return inputs[input_1] | inputs[input_2];
+    case 0x03: //xor2
+    return inputs[input_1] ^ inputs[input_2];
+    case 0x04: //nand2
+    return !(inputs[input_1] & inputs[input_2]);
+    case 0x05: //nor2
+    return !(inputs[input_1] | inputs[input_2]);
+    case 0x06: //xnor2
+    return !(inputs[input_1] ^ inputs[input_2]);
+    case 0x07: //and3
+    return inputs[input_1] & input_2 & inputs[input_3];
+    case 0x08: //or3
+    return inputs[input_1] | input_2 | inputs[input_3];
+    case 0x09: //nand3
+    return !(inputs[input_1] & input_2 & inputs[input_3]);
+    case 0x0a: //nor3
+    return !(inputs[input_1] | input_2 | inputs[input_3]);
+    case 0x0b: //xor3
+    return inputs[input_1] ^ input_2 ^ inputs[input_3];
+    case 0x0c: //xnor3
+    return !(inputs[input_1] ^ inputs[input_2] ^ inputs[input_3]);
+    case 0x0d: //mux3
+    if (inputs[input_1]) return inputs[input_2]; else return inputs[input_3];
+    case 0x0e: //copy
+    case 0x0f:
+    printf("undefined\n");
+    exit(0);
+    break;
+  }
+}
 
-  uint8_t	 * in = (uint8_t *) calloc(width, sizeof(uint8_t));
-  uint8_t	 * out = (uint8_t *) calloc(width, sizeof(uint8_t));
+class Circuit {
+  private:
+    vector<vector<Gate>> gates;
+  public:
+    Circuit();
+    vector<uint8_t> evaluate(vector<uint8_t> inputs);
+};
 
-  for (int i = 0; i < levels; i++) {
-    in = out;
-    if (i == 0) {
-      in = init_arr(in, width);
-    }
+Circuit::Circuit() {
 
-    for (int j = 0; j < width; j++) {
+  uint64_t input_2,input_3,input_1;
+  gates.resize(LEVEL);
+  for (int i = 0; i < LEVEL; ++i) {
 
-      //gateType = read_byte(ptr); ptr++;
-      gateType = generate_gate();
+    gates[i].resize(WIDTH);
+    for (int j = 0; j < WIDTH; ++j) {
+      uint8_t gateType = generate_gate();
       switch (gate_inputs(gateType)) {
         case 1:
-          //input_1 = in_arr[read_byte(ptr)]; ptr+=8;
-          input_1 = generate_stride(width);
-          break;
+        input_1 = generate_stride(WIDTH);
+        input_2 = -1;
+        input_3 = -1;
+        break;
         case 2:
-          //input_1 = in_arr[read_byte(ptr)]; ptr+=8;
-          input_1 = generate_stride(width);
-          //input_2 = in_arr[read_byte(ptr)]; ptr+=8;
-          input_2 = generate_stride(width);
-          break;
+        input_1 = generate_stride(WIDTH);
+        input_2 = generate_stride(WIDTH);
+        input_3 = -1;
+        break;
         case 3:
-          //input_1 = in_arr[read_byte(ptr)]; ptr+=8;
-          input_1 = generate_stride(width);
-          //input_2 = in_arr[read_byte(ptr)]; ptr+=8;
-          input_2 = generate_stride(width);
-          //input_3 = in_arr[read_byte(ptr)]; ptr+=8;
-          input_3 = generate_stride(width);
-          break;
+        input_1 = generate_stride(WIDTH);
+        input_2 = generate_stride(WIDTH);
+        input_3 = generate_stride(WIDTH);
+        break;
       }
+      Gate gate (gateType,input_1,input_2,input_3);
+      gates[i][j] = gate;
     }
   }
 }
 
-int main() {
+vector<uint8_t> Circuit::evaluate(vector<uint8_t> inputs) {
 
+  vector<uint8_t> outputs;
+  outputs.resize(WIDTH);
 
-    PCM * m = PCM::getInstance();
-    PCM::ErrorCode returnResult = m->program();
-    if (returnResult != PCM::Success){
-       std::cerr << "Intel's PCM couldn't start" << std::endl;
-       std::cerr << "Error code: " << returnResult << std::endl;
-       exit(1);
+  for (int i = 0; i< LEVEL; i++) {
+    for (int j = 0; j < WIDTH; j++) {
+      outputs[j] = gates[i][j].evaluate(inputs);
     }
+    inputs = outputs;
+  }
 
-    SystemCounterState before_sstate = getSystemCounterState();
-
-    simulate();
-
-    SystemCounterState after_sstate = getSystemCounterState();
-
-    cout << "EXEC: " << getExecUsage(before_sstate, after_sstate) << endl;
-    cout << "IPC: " << getIPC(before_sstate, after_sstate) << endl;
-    cout << "FREQ: " << getAverageFrequency(before_sstate, after_sstate) << endl;
-    cout << "AFREQ: " << getActiveAverageFrequency(before_sstate, after_sstate) << endl;
-    cout << "L3MISS: " << getL3CacheMisses(before_sstate, after_sstate) << endl;
-    cout << "L2MISS: " << getL2CacheMisses(before_sstate, after_sstate) << endl;
-    cout << "L3HIT: " << getL3CacheHits(before_sstate, after_sstate) << endl;
-    cout << "L3HITR: " << getL3CacheHitRatio(before_sstate, after_sstate) << endl;
-    cout << "L2HIT: " << getL2CacheHits(before_sstate, after_sstate) << endl;
-    cout << "L2HITR: " << getL2CacheHitRatio(before_sstate, after_sstate) << endl;
-    cout << "L3MPI: " << getIPC(before_sstate, after_sstate) << endl;
-    cout << "L2MPI: " << getIPC(before_sstate, after_sstate) << endl;
-    cout << "READ: " << getIPC(before_sstate, after_sstate) << endl;
-    cout << "IO: " << getIPC(before_sstate, after_sstate) << endl;
-    cout << "Instructoins: " << getInstructionsRetired(before_sstate, after_sstate) << endl;
-    cout << "Cycles: " << getCycles(before_sstate, after_sstate) << endl;
+  return outputs;
+}
 
 
-    // cout << "Exec: " << getExecUsage(before_sstate, after_sstate) << endl;
-    // cout << "IPC: " << getIPC(before_sstate, after_sstate) << endl;
-    // cout << "Avg Freq: " << getAverageFrequency(before_sstate, after_sstate) << endl;
-    // cout << "Active Avg Freq: " << getActiveAverageFrequency(before_sstate, after_sstate) << endl;
-    // cout << "Cycles Lost L3 miss" << getCyclesLostDueL3CacheMisses(before_sstate, after_sstate) << endl;
-    // cout << "Cycles Lost L2 miss" << getCyclesLostDueL2CacheMisses(before_sstate, after_sstate) << endl;
-    // cout << "Relative Freq: " << getRelativeFrequency(before_sstate, after_sstate) << endl;
-    // cout << "Active Relative Freq: " << getActiveRelativeFrequency(before_sstate, after_sstate) << endl;
-    // cout << "L2 hit ratio: " << getL2CacheHitRatio(before_sstate, after_sstate) << endl;
-    // cout << "L3 hit ratio: " << getL3CacheHitRatio(before_sstate, after_sstate) << endl;
-    // cout << "L3 miss: " << getL3CacheMisses(before_sstate, after_sstate) << endl;
-    // cout << "L2 miss: " << getL2CacheMisses(before_sstate, after_sstate) << endl;
-    // cout << "L2 cache hits: " << getL2CacheHits(before_sstate, after_sstate) << endl;
-    // cout << "L3 cache hits no snoop: " << getL3CacheHitsNoSnoop(before_sstate, after_sstate) << endl;
-    // cout << "L3 cache hits snoop: " << getL3CacheHitsSnoop(before_sstate, after_sstate) << endl;
-    // cout << "L3 cache hits: " << getL3CacheHits(before_sstate, after_sstate) << endl;
-    // cout << "" << getInvariantTSC(before_sstate, after_sstate) << endl;
-    // cout << "" << getRefCycles(before_sstate, after_sstate) << endl;
+void print_counters(SystemCounterState before_sstate, SystemCounterState after_sstate) {
+  cout << getExecUsage(before_sstate, after_sstate) << endl;
+  cout << getAverageFrequency(before_sstate, after_sstate) << endl;
+  cout << getActiveAverageFrequency(before_sstate, after_sstate) << endl;
 
-    m->cleanup();
+  cout  << getL2CacheMisses(before_sstate, after_sstate) << endl;
+  cout  << getL2CacheHits(before_sstate, after_sstate) << endl;
+  cout  << getL2CacheHitRatio(before_sstate, after_sstate) << endl;
 
+  cout  << getL3CacheMisses(before_sstate, after_sstate) << endl;
+  cout  << getL3CacheHits(before_sstate, after_sstate) << endl;
+  cout  << getL3CacheHitRatio(before_sstate, after_sstate) << endl;
+  cout  << getL3CacheOccupancy(getSystemCounterState())  << endl;
 
-  // PCM *m = PCM::getInstance();
-  // m->program (PCM::DEFAULT_EVENTS, NULL);
-  // SystemCounterState before_sstate = getSystemCounterState();
-  // // Begin of custom code
-  // cout<<"Starting simulation" << endl;
-  //
-  // simulate();
-  //
-  // cout<<"Simulation finished!!" << endl;
-  // // End of custom code
-  // SystemCounterState after_sstate = getSystemCounterState();
-  //
-  // cout << "Instructions per clock: " << getIPC(before_sstate,after_sstate) << endl;
-  // cout << "L3 Cache Misses: "<< getL3CacheMisses(before_sstate,after_sstate) << endl;
-  // cout << "L2 Cache Misses: "<< getL2CacheMisses(before_sstate,after_sstate) << endl;
-  // cout << "L3 cache hit ratio: " << getL3CacheHitRatio(before_sstate,after_sstate) << endl;
-  // cout << "L2 cache hit ratio: "<< getL2CacheHitRatio(before_sstate, after_sstate) << endl;
-  // cout << "Bytes read:" << getBytesReadFromMC(before_sstate,after_sstate) << endl;
+  cout  << getBytesReadFromMC(before_sstate, after_sstate) << endl;
+  cout  << getBytesWrittenToMC(before_sstate, after_sstate) << endl;
+  cout  << getIORequestBytesFromMC(before_sstate, after_sstate) << endl;
 
-  // m->cleanup();
+  cout  << getInstructionsRetired(before_sstate, after_sstate) << endl;
+  cout  << getCycles(before_sstate, after_sstate) << endl;
+  cout  << getIPC(before_sstate, after_sstate) << endl;
+}
+
+int main() {
+  srand(std::time(0));
+
+  PCM * m = PCM::getInstance();
+  PCM::ErrorCode returnResult = m->program();
+  if (returnResult != PCM::Success){
+    std::cerr << "Intel's PCM couldn't start" << std::endl;
+    std::cerr << "Error code: " << returnResult << std::endl;
+    exit(1);
+  }
+
+  cout << "Initial state" << endl;
+  SystemCounterState before_sstate = getSystemCounterState();
+  SystemCounterState after_sstate = getSystemCounterState();
+  cout << "Done" << endl;
+
+  print_counters(before_sstate, after_sstate);
+
+  cout << "Start Generating" << endl;
+  before_sstate = getSystemCounterState();
+  Circuit circuit;
+  after_sstate = getSystemCounterState();
+  cout << "Done" << endl;
+
+  print_counters(before_sstate, after_sstate);
+
+  cout << "Evaluating circuit" << endl;
+  before_sstate = getSystemCounterState();
+  circuit.evaluate(init_arr(WIDTH));
+  after_sstate = getSystemCounterState();
+  cout << "Done" << endl;
+
+  print_counters(before_sstate, after_sstate);
+
+  m->cleanup();
 
 }
